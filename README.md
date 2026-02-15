@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/m
   ./wsl-setting.sh --help       # 显示帮助
 
 
-宿主机操作，写入以下内容
+宿主机操作，写入以下内容，路径是C:\Users\username
 ```
 [wsl2]
 # --- 你的原有网络配置 (保留) ---
