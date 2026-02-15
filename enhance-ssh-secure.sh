@@ -98,10 +98,10 @@ echo "Port $SSH_PORT" >> "$CONFIG_FILE"
 
 # 安全策略配置
 update_config "PasswordAuthentication" "no"
-update_config "ChallengeResponseAuthentication" "no"
+update_config "KbdInteractiveAuthentication" "no"
 update_config "PubkeyAuthentication" "yes"
 update_config "PermitRootLogin" "prohibit-password"
-update_config "UsePAM" "no"
+update_config "UsePAM" "yes"
 
 # ----------------------------
 # 4. Ubuntu 24.04 特性适配
@@ -150,7 +150,7 @@ systemctl daemon-reload
 if sshd -t; then
     echo -e "${GREEN}配置验证通过。${NC}"
     systemctl restart ssh
-    
+
     sleep 1
     if ss -tulpn | grep -q ":$SSH_PORT "; then
          echo ""
