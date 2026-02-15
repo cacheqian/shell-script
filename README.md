@@ -6,9 +6,13 @@ chmod +x wsl-setting.sh
 方式2：一行命令执行
 curl -fsSL https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-setting.sh
 使用方式
+
   ./wsl-setting.sh              # 交互式输入端口
+  
   ./wsl-setting.sh 7890         # 直接指定端口
+  
   ./wsl-setting.sh --help       # 显示帮助
+
 
 # Shell Scripts for Ubuntu 24.04 Server
 
