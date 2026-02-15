@@ -1,12 +1,14 @@
-方式1：直接下载运行                                                                                                                                                                                                                      wget https://raw.githubusercontent.com/你的用户名/你的仓库/main/wsl-setup.sh                                                                                                                                                             chmod +x wsl-setup.sh
-./wsl-setup.sh
+方式1：直接下载运行                                                                                                                                                                                                                   
+wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-setting.sh                                                                                                                                           
+chmod +x wsl-setting.sh
+./wsl-setting.sh
 
 方式2：一行命令执行
-curl -fsSL https://raw.githubusercontent.com/你的用户名/你的仓库/main/wsl-setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-setting.sh
 使用方式
-  ./wsl-setup.sh              # 交互式输入端口
-  ./wsl-setup.sh 7890         # 直接指定端口
-  ./wsl-setup.sh --help       # 显示帮助
+  ./wsl-setting.sh              # 交互式输入端口
+  ./wsl-setting.sh 7890         # 直接指定端口
+  ./wsl-setting.sh --help       # 显示帮助
 
 # Shell Scripts for Ubuntu 24.04 Server
 
