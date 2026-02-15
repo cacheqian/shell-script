@@ -1,0 +1,190 @@
+#!/bin/bash
+
+# ==============================================================================
+# Linux Network Reinstall Script (Optimized for Ubuntu 24.04 Host & Target)
+# Function: Reinstall Ubuntu 24.04 via DD mode using a Debian Loader
+# ==============================================================================
+
+# 设置目标镜像 URL (Ubuntu 24.04 LTS RAW Image)
+# 注意：这里使用了一个社区常用的精简版镜像源（含有默认密码），你也可以替换为你自己制作的镜像链接
+# 默认镜像账户: root
+# 默认镜像密码: LeitboGi0ro
+DD_IMAGE_URL="https://dl.lamp.sh/vhd/ubuntu_24.04_amd64.img.gz"
+
+# 强制需要 root 权限
+[[ "$EUID" -ne '0' ]] && echo "Error: This script must be run as root!" && exit 1
+
+# ==============================================================================
+# 1. 环境检查与依赖安装 (针对 Ubuntu 24.04 宿主优化)
+# ==============================================================================
+echo -e "\n\033[36m# Checking Environment & Dependencies...\033[0m"
+
+# 更新并安装必要工具
+apt-get update -y
+apt-get install -y wget cpio gzip grep sed awk iproute2 openssl xz-utils
+
+# ==============================================================================
+# 2. 网络信息自动获取
+# ==============================================================================
+echo -e "\033[36m# Detecting Network Configuration...\033[0m"
+
+# 获取主网卡接口
+INTERFACE=$(ip route show default | grep "^default" | awk '{print $5}' | head -n1)
+if [[ -z "$INTERFACE" ]]; then
+    INTERFACE=$(ip link | grep 'state UP' | awk -F: '{print $2}' | awk '{print $1}' | head -n1)
+fi
+
+# 获取 IP 地址 (适配 /32 和 /24 等情况)
+IP_ADDR=$(ip -4 addr show dev "$INTERFACE" | grep "inet" | awk '{print $2}' | head -n1 | cut -d'/' -f1)
+
+# 获取网关
+GATEWAY=$(ip route show default | awk '{print $3}' | head -n1)
+
+# 获取子网掩码 (简单计算，Debian Installer 需要)
+CIDR=$(ip -4 addr show dev "$INTERFACE" | grep "inet" | awk '{print $2}' | head -n1 | cut -d'/' -f2)
+NETMASK=""
+if [[ -n "$CIDR" ]]; then
+    # 简单的掩码转换逻辑
+    eval $(ipcalc -m "$IP_ADDR/$CIDR" 2>/dev/null | grep NETMASK)
+    if [[ -z "$NETMASK" ]]; then
+        # 如果 ipcalc 不可用，回退到常见掩码
+        [[ "$CIDR" == "24" ]] && NETMASK="255.255.255.0"
+        [[ "$CIDR" == "32" ]] && NETMASK="255.255.255.255"
+        [[ -z "$NETMASK" ]] && NETMASK="255.255.255.0" 
+    fi
+fi
+
+# 获取 DNS (默认 Google，防止本地 DNS 在重装环境不可用)
+DNS_SERVER="8.8.8.8"
+
+echo -e "  Interface: \033[33m$INTERFACE\033[0m"
+echo -e "  IP Addr:   \033[33m$IP_ADDR\033[0m"
+echo -e "  Gateway:   \033[33m$GATEWAY\033[0m"
+echo -e "  Netmask:   \033[33m$NETMASK\033[0m"
+
+if [[ -z "$IP_ADDR" ]] || [[ -z "$GATEWAY" ]]; then
+    echo -e "\033[31mError: Could not detect network configuration.\033[0m"
+    exit 1
+fi
+
+# ==============================================================================
+# 3. 下载 Debian 12 (Bookworm) 引导文件作为 Loader
+# ==============================================================================
+echo -e "\n\033[36m# Downloading Boot Loader (Debian 12)...\033[0m"
+
+mkdir -p /boot/reinstall
+cd /boot/reinstall
+
+# 使用 Debian 12 的网络安装内核，因为它对新硬件支持最好
+DEBIAN_MIRROR="http://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/debian-installer/amd64"
+
+wget --no-check-certificate -qO linux "$DEBIAN_MIRROR/linux"
+wget --no-check-certificate -qO initrd.gz "$DEBIAN_MIRROR/initrd.gz"
+
+if [[ ! -f "linux" ]] || [[ ! -f "initrd.gz" ]]; then
+    echo -e "\033[31mError: Failed to download boot files.\033[0m"
+    exit 1
+fi
+
+# ==============================================================================
+# 4. 构建 Preseed 自动脚本 (核心逻辑)
+# ==============================================================================
+echo -e "\033[36m# Configuring Auto-Install Script...\033[0m"
+
+# 这里的逻辑是：引导 Debian 安装程序，配置好网络，然后不安装 Debian，
+# 而是直接运行 early_command 下载 Ubuntu 镜像并 dd 到硬盘
+cat > preseed.cfg <<EOF
+d-i debian-installer/locale string en_US.UTF-8
+d-i console-setup/ask_detect boolean false
+d-i keyboard-configuration/xkb-keymap select us
+
+# 网络配置
+d-i netcfg/choose_interface select auto
+d-i netcfg/disable_autoconfig boolean true
+d-i netcfg/get_nameservers string $DNS_SERVER
+d-i netcfg/get_ipaddress string $IP_ADDR
+d-i netcfg/get_netmask string $NETMASK
+d-i netcfg/get_gateway string $GATEWAY
+d-i netcfg/confirm_static boolean true
+d-i netcfg/hostname string localhost
+d-i netcfg/domain string localdomain
+
+# 镜像设置 (随便填，反正不真实用)
+d-i mirror/country string manual
+d-i mirror/http/hostname string deb.debian.org
+d-i mirror/http/directory string /debian
+d-i mirror/http/proxy string
+
+# 关键：在加载组件前劫持流程
+# 1. 找到主硬盘
+# 2. 下载 DD 镜像
+# 3. 解压并写入硬盘
+# 4. 强制重启
+d-i partman/early_command string \\
+    MAIN_DISK=\$(list-devices disk | head -n1); \\
+    if [ -z "\$MAIN_DISK" ]; then MAIN_DISK="/dev/sda"; fi; \\
+    echo "Target Disk: \$MAIN_DISK" > /dev/console; \\
+    echo "Downloading and flashing Ubuntu 24.04..." > /dev/console; \\
+    wget --no-check-certificate -O- '$DD_IMAGE_URL' | gzip -d -c | dd of=\$MAIN_DISK bs=1M status=progress; \\
+    echo "Flashing complete. Rebooting..." > /dev/console; \\
+    echo b > /proc/sysrq-trigger
+
+EOF
+
+# 将 preseed.cfg 打包进 initrd
+echo -e "\033[36m# Repacking Initrd...\033[0m"
+cp initrd.gz initrd.gz.orig
+find . | cpio -H newc --create --verbose | gzip -9 > initrd.img
+mv initrd.img /boot/reinstall/initrd.img
+
+# ==============================================================================
+# 5. 配置 Grub 引导
+# ==============================================================================
+echo -e "\033[36m# Updating Grub Configuration...\033[0m"
+
+GRUB_CFG="/boot/grub/grub.cfg"
+if [[ ! -f "$GRUB_CFG" ]]; then
+    echo -e "\033[31mError: Grub config not found at $GRUB_CFG\033[0m"
+    exit 1
+fi
+
+# 创建新的引导项
+# 适配 Ubuntu 24.04 的 Grub 语法
+cat >> "$GRUB_CFG" <<EOF
+
+menuentry 'Reinstall Ubuntu 24.04' {
+    set root='$(grub-probe --target=drive /boot/reinstall/linux | sed 's/[()]/ /g' | awk '{print $1}')'
+    linux /boot/reinstall/linux auto=true priority=critical file=/preseed.cfg
+    initrd /boot/reinstall/initrd.img
+}
+EOF
+
+# 设置下一次启动为该引导项
+# 注意：在 Ubuntu 24.04 中，grub-reboot 可能不可靠，这里使用 grub-set-default
+# 获取新菜单项的索引（通常是最后一个）
+MENU_COUNT=$(grep -c "^menuentry" "$GRUB_CFG")
+NEW_ENTRY_INDEX=$(($MENU_COUNT - 1))
+
+echo -e "  Added Grub entry at index: $NEW_ENTRY_INDEX"
+
+# 尝试设置默认启动项
+if command -v grub-set-default >/dev/null; then
+    grub-set-default "$NEW_ENTRY_INDEX"
+elif command -v grub2-set-default >/dev/null; then
+    grub2-set-default "$NEW_ENTRY_INDEX"
+else
+    # 暴力修改 default
+    sed -i "s/^set default=.*/set default=\"$NEW_ENTRY_INDEX\"/" "$GRUB_CFG"
+fi
+
+# ==============================================================================
+# 6. 完成与重启
+# ==============================================================================
+echo -e "\n\033[32m# Ready to Reinstall!\033[0m"
+echo -e "\033[33m  WARNING: The system will reboot and ALL DATA WILL BE WIPED.\033[0m"
+echo -e "  Target OS: Ubuntu 24.04 (via DD Image)"
+echo -e "  Default Password (after install): \033[32mLeitboGi0ro\033[0m (Check script 'DD_IMAGE_URL' to verify)"
+echo -e "  Rebooting in 5 seconds..."
+
+sleep 5
+reboot
