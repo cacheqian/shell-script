@@ -1,6 +1,8 @@
 方式1：直接下载运行                                                                                                                                                                                                                   
-wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-setting.sh                                                                                                                                           
+wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-setting.sh
+
 chmod +x wsl-setting.sh
+
 ./wsl-setting.sh
 
 方式2：一行命令执行
