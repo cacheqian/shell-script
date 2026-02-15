@@ -1,3 +1,13 @@
+方式1：直接下载运行                                                                                                                                                                                                                      wget https://raw.githubusercontent.com/你的用户名/你的仓库/main/wsl-setup.sh                                                                                                                                                             chmod +x wsl-setup.sh
+./wsl-setup.sh
+
+方式2：一行命令执行
+curl -fsSL https://raw.githubusercontent.com/你的用户名/你的仓库/main/wsl-setup.sh | bash
+使用方式
+  ./wsl-setup.sh              # 交互式输入端口
+  ./wsl-setup.sh 7890         # 直接指定端口
+  ./wsl-setup.sh --help       # 显示帮助
+
 # Shell Scripts for Ubuntu 24.04 Server
 
 适用于 Ubuntu 24.04 服务器的 Shell 脚本集合。
