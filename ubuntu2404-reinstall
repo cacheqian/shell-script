@@ -112,7 +112,7 @@ cd initramfs_extracted
 zcat ../initramfs-lts | cpio -idm 2>/dev/null
 
 # Create the installation script that runs in Alpine
-# Note: Variables are expanded at script generation time, not at runtime
+# IMPORTANT: All variables are expanded at generation time (NOW), not at runtime
 cat > init << EOF
 #!/bin/sh
 
@@ -135,7 +135,7 @@ EOF
 
 # Add network configuration based on mode
 if [[ "$NET_MODE" == "dhcp" ]]; then
-    cat >> init << 'EOF'
+    cat >> init << 'NETCFG'
 echo "[*] Requesting DHCP..."
 udhcpc -i "$MAIN_IF" -q -n -t 10 2>/dev/null || {
     echo "[WARN] DHCP failed, trying fallback..."
@@ -143,7 +143,7 @@ udhcpc -i "$MAIN_IF" -q -n -t 10 2>/dev/null || {
     sleep 2
     udhcpc -i "$MAIN_IF" -q -n 2>/dev/null || true
 }
-EOF
+NETCFG
 else
     cat >> init << EOF
 echo "[*] Configuring static IP..."
@@ -154,7 +154,7 @@ echo "nameserver $DNS2" >> /etc/resolv.conf
 EOF
 fi
 
-# Continue the init script with embedded values
+# Continue the init script with embedded values (expanded NOW)
 cat >> init << EOF
 
 echo "[*] Network configured."
@@ -215,11 +215,11 @@ if [ ! -d /mnt/etc ]; then
     reboot -f
 fi
 
-# Configure cloud-init
+# Configure cloud-init - values are embedded at script generation time
 echo "[*] Setting up cloud-init configuration..."
 mkdir -p /mnt/etc/cloud/cloud.cfg.d
 
-cat > /mnt/etc/cloud/cloud.cfg.d/99-installer.cfg << 'CLOUDCFG'
+cat > /mnt/etc/cloud/cloud.cfg.d/99-installer.cfg << CLOUDCFG
 #cloud-config
 hostname: $HOSTNAME
 manage_etc_hosts: true
@@ -236,9 +236,9 @@ chpasswd:
     - root:$ROOT_PASS
 
 runcmd:
-  - sed -i 's/^#\?Port.*/Port $SSH_PORT/' /etc/ssh/sshd_config
-  - sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-  - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+  - sed -i 's/^#\\?Port.*/Port $SSH_PORT/' /etc/ssh/sshd_config
+  - sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+  - sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
   - sed -i 's|^#*Include /etc/ssh/sshd_config.d|#Include /etc/ssh/sshd_config.d|' /etc/ssh/sshd_config
   - rm -f /etc/systemd/system/ssh.service.d/*.conf 2>/dev/null || true
   - sed -i 's/^ListenStream=.*/ListenStream=$SSH_PORT/' /lib/systemd/system/ssh.socket 2>/dev/null || true
@@ -251,7 +251,7 @@ CLOUDCFG
 # Disable other cloud-init data sources
 echo 'datasource_list: [ NoCloud, None ]' > /mnt/etc/cloud/cloud.cfg.d/90_dpkg.cfg
 
-# Set root password directly as backup
+# Set root password directly as backup (hash embedded at generation time)
 sed -i 's|^root:[^:]*:|root:$HASHED_PASS:|' /mnt/etc/shadow
 
 # Hack cloud-init to ignore iso9660 (prevent cloud provider override)
