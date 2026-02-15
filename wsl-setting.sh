@@ -19,6 +19,13 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}请输入代理端口 (默认 7890):${NC} "
 read -r PROXY_PORT
 PROXY_PORT="${PROXY_PORT:-7890}"
+
+# 验证端口是否为有效数字
+if ! [[ "$PROXY_PORT" =~ ^[0-9]+$ ]] || [ "$PROXY_PORT" -lt 1 ] || [ "$PROXY_PORT" -gt 65535 ]; then
+    echo -e "${RED}错误: 端口必须是 1-65535 之间的数字${NC}"
+    exit 1
+fi
+
 echo -e "使用端口: ${GREEN}${PROXY_PORT}${NC}"
 echo ""
 
