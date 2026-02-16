@@ -41,6 +41,13 @@ enabled=false
 appendWindowsPath=false
 ```
 
+原始.wslconfig
+```
+[wsl2]
+networkingMode=Mirrored
+[experimental]
+hostAddressLoopback=true
+```
 
 
 
