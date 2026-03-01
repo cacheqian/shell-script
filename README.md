@@ -1,3 +1,12 @@
+仅设置代理
+
+wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-proxy.sh
+
+chmod +x wsl-proxy.sh
+
+./wsl-proxy.sh
+
+
 方式1：直接下载运行                                                                                                                                                                                                                   
 wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-setting.sh
 
