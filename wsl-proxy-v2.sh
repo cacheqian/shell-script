@@ -220,6 +220,17 @@ EOF
             } | sudo tee -a /etc/apt/sources.list >/dev/null
         fi
 
+        # 同时处理 /etc/apt/sources.list.d/ 下的系统默认源文件
+        for f in /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+            [[ -f "$f" ]] || continue
+            if grep -qE 'archive\.ubuntu\.com|security\.ubuntu\.com' "$f" 2>/dev/null; then
+                sudo cp "$f" "$f.bak.$(date +%Y%m%d_%H%M%S)"
+                sudo sed -i 's|archive.ubuntu.com|mirrors.aliyun.com|g' "$f"
+                sudo sed -i 's|security.ubuntu.com|mirrors.aliyun.com|g' "$f"
+                echo -e "${GREEN}✓${NC} 已替换 $(basename "$f")"
+            fi
+        done
+
         echo -e "${GREEN}✓${NC} 已替换为阿里云镜像 (备份: $BACKUP_FILE)"
     fi
 else
