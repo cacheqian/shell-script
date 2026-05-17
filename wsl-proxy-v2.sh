@@ -190,14 +190,36 @@ if [[ "$mirror_confirm" =~ ^[Yy]$ ]]; then
     else
         echo -e "${BLUE}  检测到系统版本代号: ${CODENAME}${NC}"
 
-        BACKUP_FILE="/etc/apt/sources.list.bak.$(date +%Y%m%d_%H%M%S)"
-        sudo cp /etc/apt/sources.list "$BACKUP_FILE"
+        # Ubuntu 24.04+ 使用 /etc/apt/sources.list.d/ubuntu.sources (DEB822 格式)
+        if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            # 备份到 /root/ 避免 apt 扫描报错
+            sudo cp /etc/apt/sources.list.d/ubuntu.sources "/root/ubuntu.sources.bak.$(date +%Y%m%d_%H%M%S)"
+            sudo sed -i 's|archive.ubuntu.com|mirrors.aliyun.com|g' /etc/apt/sources.list.d/ubuntu.sources
+            sudo sed -i 's|security.ubuntu.com|mirrors.aliyun.com|g' /etc/apt/sources.list.d/ubuntu.sources
+            echo -e "${GREEN}✓${NC} 已替换 ubuntu.sources"
 
-        # 保留原文件中非 Ubuntu 官方的第三方源（PPA 等）
-        EXTRA_LINES=$(grep -vE '^#|^ *$' /etc/apt/sources.list 2>/dev/null | grep -vE 'ubuntu\.com|mirrors\.aliyun\.com' || true)
+            # 清空 /etc/apt/sources.list 中与官方源重复的行，避免 "configured multiple times" 警告
+            if [[ -f /etc/apt/sources.list ]]; then
+                sudo sed -i '/^deb .*ubuntu\.com/d' /etc/apt/sources.list
+                sudo sed -i '/^deb .*mirrors\.aliyun\.com/d' /etc/apt/sources.list
+                # 如果文件变空或只剩空行/注释，追加一个提示
+                if ! grep -qE '^deb ' /etc/apt/sources.list 2>/dev/null; then
+                    sudo tee /etc/apt/sources.list >/dev/null << EOF
+# 系统默认源已迁移至 /etc/apt/sources.list.d/ubuntu.sources
+# 如需添加第三方源，请在此文件追加
+EOF
+                fi
+            fi
+        else
+            # 旧版本（24.04 之前）：直接覆盖 /etc/apt/sources.list
+            BACKUP_FILE="/root/sources.list.bak.$(date +%Y%m%d_%H%M%S)"
+            sudo cp /etc/apt/sources.list "$BACKUP_FILE"
 
-        # 写入对应版本的阿里云标准源
-        sudo tee /etc/apt/sources.list >/dev/null << EOF
+            # 保留原文件中非 Ubuntu 官方的第三方源（PPA 等）
+            EXTRA_LINES=$(grep -vE '^#|^ *$' /etc/apt/sources.list 2>/dev/null | grep -vE 'ubuntu\.com|mirrors\.aliyun\.com' || true)
+
+            # 写入对应版本的阿里云标准源
+            sudo tee /etc/apt/sources.list >/dev/null << EOF
 deb https://mirrors.aliyun.com/ubuntu/ ${CODENAME} main restricted universe multiverse
 # deb-src https://mirrors.aliyun.com/ubuntu/ ${CODENAME} main restricted universe multiverse
 
@@ -211,27 +233,39 @@ deb https://mirrors.aliyun.com/ubuntu/ ${CODENAME}-security main restricted univ
 # deb-src https://mirrors.aliyun.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
 EOF
 
-        # 如果有第三方源，追加保留
-        if [[ -n "$EXTRA_LINES" ]]; then
-            {
-                echo ""
-                echo "# 保留的原始第三方源"
-                echo "$EXTRA_LINES"
-            } | sudo tee -a /etc/apt/sources.list >/dev/null
+            if [[ -n "$EXTRA_LINES" ]]; then
+                {
+                    echo ""
+                    echo "# 保留的原始第三方源"
+                    echo "$EXTRA_LINES"
+                } | sudo tee -a /etc/apt/sources.list >/dev/null
+            fi
+
+            echo -e "${GREEN}✓${NC} 已替换为阿里云镜像 (备份: $BACKUP_FILE)"
         fi
 
-        # 同时处理 /etc/apt/sources.list.d/ 下的系统默认源文件
-        for f in /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+        # 处理 /etc/apt/sources.list.d/ 下的 .list 文件（第三方 .list 中的官方源）
+        for f in /etc/apt/sources.list.d/*.list; do
             [[ -f "$f" ]] || continue
             if grep -qE 'archive\.ubuntu\.com|security\.ubuntu\.com' "$f" 2>/dev/null; then
-                sudo cp "$f" "$f.bak.$(date +%Y%m%d_%H%M%S)"
+                sudo cp "$f" "/root/$(basename "$f").bak.$(date +%Y%m%d_%H%M%S)"
                 sudo sed -i 's|archive.ubuntu.com|mirrors.aliyun.com|g' "$f"
                 sudo sed -i 's|security.ubuntu.com|mirrors.aliyun.com|g' "$f"
                 echo -e "${GREEN}✓${NC} 已替换 $(basename "$f")"
             fi
         done
 
-        echo -e "${GREEN}✓${NC} 已替换为阿里云镜像 (备份: $BACKUP_FILE)"
+        # 清理之前脚本产生的无效备份（避免 apt 报 "invalid filename extension"）
+        for bak in /etc/apt/sources.list.d/*.bak.*; do
+            [[ -f "$bak" ]] || continue
+            sudo rm -f "$bak"
+        done
+
+        # 已使用国内镜像，APT 无需再走代理
+        if [[ -f /etc/apt/apt.conf.d/proxy.conf ]]; then
+            sudo rm -f /etc/apt/apt.conf.d/proxy.conf
+            echo -e "${GREEN}✓${NC} 已清理 APT 代理配置（国内镜像无需代理）"
+        fi
     fi
 else
     echo -e "${YELLOW}↷ 跳过换源${NC}"
