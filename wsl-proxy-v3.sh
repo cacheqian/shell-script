@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# WSL2 代理配置脚本 v3
+# WSL2 代理配置脚本 v3（root 专用版）
 #
 # 适用环境：Ubuntu 24.04 + WSL2 mirrored networking
+# 执行用户：root
 # 代理：mixed proxy，127.0.0.1:7890
 #
 # 功能：
-#   - 配置 Shell 和 Git 代理
+#   - 配置 root 用户的 Shell 和 Git 代理
 #   - 手动 proxy / noproxy 开关，不自动启用
 #   - 将 Ubuntu 官方 APT 源切换为阿里云镜像
 #   - APT 换源后直连，不使用代理
@@ -15,11 +16,10 @@
 # 用法：./wsl-proxy-v3.sh
 
 set -euo pipefail
-
-readonly SCRIPT_VERSION="3.0"
+readonly SCRIPT_VERSION="3.1-root"
 readonly MARKER_BEGIN="# >>> WSL PROXY CONFIG V3"
 readonly MARKER_END="# <<< WSL PROXY CONFIG V3"
-readonly BASHRC="${HOME}/.bashrc"
+readonly BASHRC="/root/.bashrc"
 readonly PROXY_PORT="7890"
 readonly DRIVE_UPPER="C"
 
@@ -34,7 +34,7 @@ die() { log "${RED}错误:${NC} $*" >&2; exit 1; }
 
 require_commands() {
     local command_name
-    for command_name in sed grep python3 timeout mountpoint mount umount sudo; do
+    for command_name in sed grep python3 timeout mountpoint mount umount; do
         command -v "$command_name" >/dev/null 2>&1 || die "缺少命令: $command_name"
     done
 }
@@ -46,7 +46,6 @@ check_environment() {
     if ! grep -qiE 'microsoft-standard-wsl2|wsl2' /proc/version /proc/sys/kernel/osrelease 2>/dev/null; then
         die "未检测到 WSL 环境；此脚本只能在 WSL2 中执行"
     fi
-
     [[ -f /etc/os-release ]] || die "找不到 /etc/os-release，无法确认 Linux 发行版"
     # shellcheck disable=SC1091
     source /etc/os-release
@@ -61,13 +60,11 @@ check_environment() {
 
 install_bashrc_block() {
     touch "$BASHRC"
-
-    cat >> "$BASHRC" <<EOF
+    cat >> "$BASHRC" <<EOF_BASHRC
 $MARKER_BEGIN
 PROXY_PORT="${PROXY_PORT}"
 PROXY_HTTP_URL="http://127.0.0.1:\${PROXY_PORT}"
 PROXY_SOCKS_URL="socks5h://127.0.0.1:\${PROXY_PORT}"
-
 # 开启 mixed 代理
 proxy() {
     export http_proxy="\$PROXY_HTTP_URL"
@@ -80,13 +77,11 @@ proxy() {
     export NO_PROXY="\$no_proxy"
     echo -e "Proxy set to \\033[32m\$PROXY_HTTP_URL\\033[0m"
 }
-
 # 关闭代理
 noproxy() {
     unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
     echo -e "Proxy \\033[31mremoved\\033[0m"
 }
-
 # 查看代理状态
 proxystat() {
     if [[ -n "\${http_proxy:-}" ]]; then
@@ -96,7 +91,7 @@ proxystat() {
     fi
 }
 $MARKER_END
-EOF
+EOF_BASHRC
     log "${GREEN}✓${NC} Shell 代理配置完成（不会自动启用）"
 }
 
@@ -112,7 +107,7 @@ ensure_git() {
     fi
 
     log "${YELLOW}[Git]${NC} 未检测到 Git，正在从阿里云 APT 源安装..."
-    sudo apt install -y git
+    apt install -y git
     command -v git >/dev/null 2>&1 || die "Git 安装失败"
     log "${GREEN}✓${NC} Git 安装完成"
 }
@@ -127,14 +122,12 @@ configure_wsl_mount() {
     local wsl_backup="/etc/wsl.conf.bak.${timestamp}"
     local fstab_backup="/etc/fstab.bak.${timestamp}"
 
-    [[ "$EUID" -ne 0 ]] || die "请以普通用户执行脚本，脚本会在需要时调用 sudo"
     [[ "$drive_upper" =~ ^[A-Z]$ ]] || die "盘符必须是单个英文字母，例如 C"
-
-    sudo cp -a "$wsl_conf" "$wsl_backup" 2>/dev/null || true
-    sudo cp -a "$fstab" "$fstab_backup" 2>/dev/null || true
+    cp -a "$wsl_conf" "$wsl_backup" 2>/dev/null || true
+    cp -a "$fstab" "$fstab_backup" 2>/dev/null || true
 
     # 只替换 [automount] 段，保留 wsl.conf 中已有的其他配置和注释。
-    sudo python3 - "$wsl_conf" <<'PY'
+    python3 - "$wsl_conf" <<'PY'
 import sys
 
 path = sys.argv[1]
@@ -143,7 +136,6 @@ try:
         lines = f.readlines()
 except FileNotFoundError:
     lines = []
-
 out = []
 in_automount = False
 for line in lines:
@@ -163,28 +155,27 @@ out.extend([
     "enabled=false\n",
     "mountFsTab=true\n",
 ])
-
 with open(path, "w", encoding="utf-8") as f:
     f.writelines(out)
 PY
     log "${GREEN}✓${NC} 已配置 WSL：关闭 Windows 磁盘自动挂载"
 
-    sudo touch "$fstab"
+    touch "$fstab"
     # 只删除同一挂载点的旧条目，保留其他 fstab 配置。
-    sudo sed -i -E "\\|[[:space:]]${mount_dir}[[:space:]]|d" "$fstab"
-    sudo mkdir -p "$mount_dir"
-    echo "${drive_upper}: ${mount_dir} drvfs defaults,ro 0 0" | sudo tee -a "$fstab" >/dev/null
+    sed -i -E "\|[[:space:]]${mount_dir}[[:space:]]|d" "$fstab"
+    mkdir -p "$mount_dir"
+    echo "${drive_upper}: ${mount_dir} drvfs defaults,ro 0 0" | tee -a "$fstab" >/dev/null
     log "${GREEN}✓${NC} 已配置 ${drive_upper}: 只读挂载到 ${mount_dir}"
 
     # 尝试立即重新挂载；如果被占用，重启 WSL 后自动生效。
     if mountpoint -q "$mount_dir" 2>/dev/null; then
-        if sudo umount "$mount_dir" 2>/dev/null && sudo mount "$mount_dir" 2>/dev/null; then
+        if umount "$mount_dir" 2>/dev/null && mount "$mount_dir" 2>/dev/null; then
             log "${GREEN}✓${NC} ${mount_dir} 已立即重新挂载为只读"
         else
             log "${YELLOW}⚠${NC} ${mount_dir} 当前被占用，修改将在 wsl --shutdown 后生效"
         fi
     else
-        sudo mount "$mount_dir" 2>/dev/null || true
+        mount "$mount_dir" 2>/dev/null || true
     fi
 
     log "${BLUE}备份:${NC} ${wsl_backup} 和 ${fstab_backup}（如果原文件存在）"
@@ -199,15 +190,14 @@ switch_ubuntu_sources() {
         os_id="${ID:-}"
         codename="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
     fi
-
     [[ "$os_id" == "ubuntu" ]] || die "此脚本仅支持 Ubuntu，检测到: ${os_id:-未知系统}"
     [[ -n "$codename" ]] || die "无法检测 Ubuntu 版本代号"
     [[ -f "$source_file" ]] || die "找不到 Ubuntu 24.04 软件源文件: $source_file"
 
     local backup_file="/root/ubuntu.sources.bak.$(date +%Y%m%d_%H%M%S)"
     if grep -qE 'archive\.ubuntu\.com|security\.ubuntu\.com' "$source_file"; then
-        sudo cp -p "$source_file" "$backup_file"
-        sudo sed -i \
+        cp -p "$source_file" "$backup_file"
+        sed -i \
             -e 's|archive\.ubuntu\.com|mirrors.aliyun.com|g' \
             -e 's|security\.ubuntu\.com|mirrors.aliyun.com|g' \
             "$source_file"
@@ -232,7 +222,8 @@ check_proxy_port() {
 
 main() {
     [[ $# -eq 0 ]] || die "此脚本不接受参数，请直接执行：./wsl-proxy-v3.sh"
-    [[ "$EUID" -ne 0 ]] || die "请以普通用户执行脚本，脚本会在需要时调用 sudo"
+    [[ "$EUID" -eq 0 ]] || die "请以 root 用户执行脚本"
+
     require_commands
     check_environment
 
@@ -245,7 +236,7 @@ main() {
     switch_ubuntu_sources
 
     log "${YELLOW}[5/5] 更新 APT 软件包列表...${NC}"
-    sudo apt update
+    apt update
     log "${GREEN}✓${NC} APT 更新完成；未自动执行 apt upgrade"
 
     ensure_git
@@ -257,7 +248,7 @@ main() {
     log ""
     log "${GREEN}配置完成！${NC}"
     log "请执行以下命令加载配置："
-    log "  source ~/.bashrc"
+    log "  source /root/.bashrc"
     log "然后按需使用："
     log "  proxy       开启代理"
     log "  noproxy     关闭代理"
