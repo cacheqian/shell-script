@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WSL2 代理配置脚本 v3（root 专用版）
+# WSL2 Ubuntu 24.04 初始化脚本（root 专用版）
 #
 # 适用环境：Ubuntu 24.04 + WSL2 mirrored networking
 # 执行用户：root
@@ -13,7 +13,7 @@
 #   - 仅执行 apt update，不自动升级系统
 #   - 关闭 Windows 磁盘自动挂载，并将指定盘符只读挂载
 #
-# 用法：./wsl-proxy-v3.sh
+# 用法：./setup-wsl2-ubuntu24.sh
 
 set -euo pipefail
 readonly SCRIPT_VERSION="3.1-root"
@@ -221,13 +221,13 @@ check_proxy_port() {
 }
 
 main() {
-    [[ $# -eq 0 ]] || die "此脚本不接受参数，请直接执行：./wsl-proxy-v3.sh"
+    [[ $# -eq 0 ]] || die "此脚本不接受参数，请直接执行：./setup-wsl2-ubuntu24.sh"
     [[ "$EUID" -eq 0 ]] || die "请以 root 用户执行脚本"
 
     require_commands
     check_environment
 
-    log "${BLUE}WSL 代理配置脚本 v${SCRIPT_VERSION}${NC}"
+    log "${BLUE}WSL2 Ubuntu 初始化脚本 v${SCRIPT_VERSION}${NC}"
     log "代理端口: ${GREEN}${PROXY_PORT}${NC}（mixed）"
     check_proxy_port
 

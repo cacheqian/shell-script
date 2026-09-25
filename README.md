@@ -4,12 +4,12 @@
 
 | 脚本 | 作用 | 适用场景 |
 | --- | --- | --- |
-| `wsl-proxy-v3.sh` | 配置代理、Git、APT 阿里云源，并将 Windows C 盘设为只读挂载 | 新建的 Ubuntu 24.04 WSL2 开发环境 |
+| `setup-wsl2-ubuntu24.sh` | 配置代理、Git、APT 阿里云源，并将 Windows C 盘设为只读挂载 | 新建的 Ubuntu 24.04 WSL2 开发环境 |
 | `ban-wsl-mnt.sh` | 单独关闭 Windows 磁盘自动挂载，并把指定盘符以只读方式挂载 | 只需要限制 WSL 写入 Windows 磁盘 |
 
 > 这些脚本会修改系统配置。运行前请先阅读下方的“重要影响”。
 
-## wsl-proxy-v3.sh
+## setup-wsl2-ubuntu24.sh
 
 ### 作用
 
@@ -39,9 +39,9 @@
 ### 下载并执行
 
 ```bash
-wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/wsl-proxy-v3.sh
-chmod +x wsl-proxy-v3.sh
-sudo ./wsl-proxy-v3.sh
+wget https://raw.githubusercontent.com/cacheqian/shell-script/refs/heads/main/setup-wsl2-ubuntu24.sh
+chmod +x setup-wsl2-ubuntu24.sh
+sudo ./setup-wsl2-ubuntu24.sh
 ```
 
 脚本执行完后，在 Windows PowerShell 中运行：
